@@ -10,13 +10,14 @@
   <main class="card">
     <h1>🔒 老闆叫號後台</h1>
 
-    <!-- ✅ 把 class 改為 auth：密碼欄就會滿版可見 -->
+    <!-- 登入列（保留在頁面上，只有驗證成功才隱藏） -->
     <div id="auth-section" class="auth">
       <input type="password" id="admin-password" placeholder="請輸入後台密碼" />
       <button id="login-btn" class="primary">登入</button>
       <button id="voice-btn" type="button" class="secondary">🔊 解鎖語音</button>
     </div>
 
+    <!-- 後台面板 -->
     <div id="admin-panel" class="hidden">
       <div class="label">目前號碼</div>
       <div id="current-number" class="now-serving" style="margin-top:4px;">
@@ -29,6 +30,7 @@
         <input type="checkbox" id="speak-toggle" checked />
         <label for="speak-toggle">啟用語音播報</label>
         <button id="test-voice" type="button" class="secondary">測試播報</button>
+        <button id="logout-btn" type="button" class="secondary">登出</button>
       </div>
       <div class="voice"><span class="hint">（行動裝置請先點一次「解鎖語音」或「測試播報」）</span></div>
 
@@ -45,7 +47,6 @@
   </main>
 
   <script>
-    /* —— 下面 JS 與你目前版本相同（語音解鎖 / 取資料 / 下一號 / 重置）—— */
     const auth = document.getElementById('auth-section');
     const panel = document.getElementById('admin-panel');
     const pwdInput = document.getElementById('admin-password');
@@ -56,11 +57,13 @@
     const speakToggle = document.getElementById('speak-toggle');
     const testBtn = document.getElementById('test-voice');
     const unlockBtn = document.getElementById('voice-btn');
+    const logoutBtn = document.getElementById('logout-btn');
 
     let password = '';
     let audioUnlocked = false;
     let audioCtx = null;
 
+    // ---------- 音訊解鎖 & 語音 ----------
     function unlockAudio(){
       if (audioUnlocked) return;
       audioUnlocked = true;
@@ -73,8 +76,7 @@
           const gain = audioCtx.createGain();
           gain.gain.value = 0.0001;
           osc.connect(gain).connect(audioCtx.destination);
-          osc.start();
-          osc.stop(audioCtx.currentTime + 0.02);
+          osc.start(); osc.stop(audioCtx.currentTime + 0.02);
         }
       }catch{}
       try{
@@ -106,33 +108,70 @@
       try{ window.speechSynthesis.cancel(); }catch{}
       setTimeout(()=>{ try{ window.speechSynthesis.speak(u); }catch{} },0);
     }
-
     unlockBtn.addEventListener('click', ()=>{ unlockAudio(); speak('語音已啟用'); });
     testBtn.addEventListener('click', ()=> speak('這是測試播報'));
 
-    if (sessionStorage.getItem('adminOK') === '1') {
-      auth.classList.add('hidden');
-      panel.classList.remove('hidden');
-      refreshAll();
+    // ---------- 驗證 & 登入/登出 ----------
+    async function verify(pw){
+      const res = await fetch(`/api/auth?password=${encodeURIComponent(pw)}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      return !!data.success;
     }
 
-    document.getElementById('login-btn').addEventListener('click', () => {
-      const val = pwdInput.value.trim();
-      if (!val) return alert('請輸入密碼');
-      password = val;
-      sessionStorage.setItem('adminOK', '1');
+    function showPanel(){
       auth.classList.add('hidden');
       panel.classList.remove('hidden');
       unlockAudio();
       refreshAll();
+    }
+    function showLogin(){
+      panel.classList.add('hidden');
+      auth.classList.remove('hidden');
+      pwdInput.value = '';
+      pwdInput.focus();
+    }
+    function logout(){
+      password = '';
+      sessionStorage.removeItem('adminPW');
+      showLogin();
+    }
+    logoutBtn.addEventListener('click', logout);
+
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const val = (pwdInput.value || '').trim();
+      if (!val) return alert('請輸入密碼');
+      const ok = await verify(val);
+      if (!ok){
+        alert('密碼錯誤，請再試一次');
+        pwdInput.select();
+        return;
+      }
+      password = val;
+      sessionStorage.setItem('adminPW', val); // 儲存當次會話密碼，重新整理仍可自動登入
+      showPanel();
     });
 
+    // 自動登入（只有在驗證通過才顯示面板）
+    (async function autoLogin(){
+      const saved = sessionStorage.getItem('adminPW');
+      if (!saved) return;
+      const ok = await verify(saved);
+      if (ok){
+        password = saved;
+        showPanel();
+      }else{
+        sessionStorage.removeItem('adminPW');
+        showLogin();
+      }
+    })();
+
+    // ---------- 取資料 / UI ----------
     async function fetchJSON(url){
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP '+res.status);
       return res.json();
     }
-
     async function fetchCurrent(){
       const data = await fetchJSON('/api/current');
       if (data?.current){
@@ -145,7 +184,6 @@
         currentPhoneEl.textContent = '--';
       }
     }
-
     async function fetchLineup(){
       const data = await fetchJSON('/api/lineup?limit=5');
       const rows = data.next || [];
@@ -157,28 +195,46 @@
           </div>`).join('')
         : '<div class="label">目前沒有後續排隊</div>';
     }
-
     async function refreshAll(){ await Promise.all([fetchCurrent(), fetchLineup()]); }
     setInterval(()=>{ if (!panel.classList.contains('hidden')) refreshAll(); }, 3000);
 
+    // ---------- 操作按鈕（若密碼錯誤 → 自動登出回到登入列） ----------
     document.getElementById('next-btn').addEventListener('click', async ()=>{
       if (!password) return alert('尚未登入');
       const btn = document.getElementById('next-btn');
       btn.disabled = true;
       try{
         const data = await fetchJSON(`/api/next?password=${encodeURIComponent(password)}`);
-        if (data.success){ speak(`請 ${data.number} 號到櫃檯`); await refreshAll(); }
-        else alert(data.message || '操作失敗');
-      }catch{ alert('操作失敗'); }
-      finally{ btn.disabled = false; }
+        if (data.success){
+          speak(`請 ${data.number} 號到櫃檯`);
+          await refreshAll();
+        }else{
+          alert((data.message || '操作失敗') + '；請重新登入');
+          logout();
+        }
+      }catch{
+        alert('操作失敗；請重新登入');
+        logout();
+      }finally{ btn.disabled = false; }
     });
 
     document.getElementById('reset-btn').addEventListener('click', async ()=>{
       if (!password) return alert('尚未登入');
       if (!confirm('確定要重置全部號碼嗎？')) return;
-      const data = await fetchJSON(`/api/reset?password=${encodeURIComponent(password)}`);
-      if (data.success){ window.speechSynthesis?.cancel(); await refreshAll(); alert('已重置'); }
-      else alert(data.message || '操作失敗');
+      try{
+        const data = await fetchJSON(`/api/reset?password=${encodeURIComponent(password)}`);
+        if (data.success){
+          window.speechSynthesis?.cancel();
+          await refreshAll();
+          alert('已重置');
+        }else{
+          alert((data.message || '操作失敗') + '；請重新登入');
+          logout();
+        }
+      }catch{
+        alert('操作失敗；請重新登入');
+        logout();
+      }
     });
   </script>
 </body>
