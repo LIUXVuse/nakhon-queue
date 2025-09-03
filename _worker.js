@@ -1,20 +1,21 @@
-// _worker.js  —— Cloudflare Pages Functions（Advanced Mode）
+// _worker.js —— Cloudflare Pages Functions（Advanced Mode）
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // 取號
+    // 取號：POST /api/queue
     if (url.pathname === "/api/queue" && request.method === "POST") {
-      const data = await request.json();
-      const number = (parseInt(await env.QUEUE.get("lastNumber")) || 0) + 1;
+      const data = await request.json().catch(() => ({}));
+      const last = parseInt(await env.QUEUE.get("lastNumber")) || 0;
+      const number = last + 1;
 
       await env.QUEUE.put(
         `ticket:${number}`,
         JSON.stringify({
-          name: data.name,
-          gender: data.gender,
-          phone: data.phone,
+          name: data.name || "",
+          gender: data.gender || "",
+          phone: data.phone || "",
         }),
         { expirationTtl: 7200 } // 2 小時
       );
@@ -23,7 +24,7 @@ export default {
       return Response.json({ success: true, number });
     }
 
-    // 顯示目前叫號
+    // 目前號碼：GET /api/current
     if (url.pathname === "/api/current") {
       const current = await env.QUEUE.get("currentNumber");
       if (!current) return Response.json({ current: null });
@@ -32,7 +33,7 @@ export default {
       return Response.json({ current: { number: current, ...info } });
     }
 
-    // 老闆叫下一號（需密碼）
+    // 下一號：GET /api/next?password=xxx
     if (url.pathname === "/api/next") {
       const pw = url.searchParams.get("password");
       if (pw !== env.ADMIN_PASSWORD) {
@@ -51,7 +52,7 @@ export default {
       return Response.json({ success: true, number: next });
     }
 
-    // 重置叫號（需密碼）
+    // 重置：GET /api/reset?password=xxx
     if (url.pathname === "/api/reset") {
       const pw = url.searchParams.get("password");
       if (pw !== env.ADMIN_PASSWORD) {
@@ -63,7 +64,7 @@ export default {
       return Response.json({ success: true });
     }
 
-    // 其餘交給靜態資源（public/）處理
+    // 其餘交給靜態資源（public/）
     return env.ASSETS.fetch(request);
   },
 };

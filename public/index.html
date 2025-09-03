@@ -1,63 +1,125 @@
-<!-- public/index.html -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>那空沙旺叫號系統</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    .now-serving {
+      text-align: center;
+      margin: 10px 0 18px;
+      font-weight: 800;
+      font-size: 1.6rem;
+      letter-spacing: .04em;
+    }
+    .now-serving small {
+      display:block;
+      font-weight: 500;
+      font-size: .95rem;
+      color:#666;
+      letter-spacing: 0;
+      margin-bottom: 6px;
+    }
+  </style>
 </head>
 <body>
   <main class="container">
     <h1>📢 那空沙旺叫號系統</h1>
-    <p>歡迎光臨！請填寫以下資訊取得號碼牌</p>
+    <p style="text-align:center;">歡迎光臨！請填寫以下資訊取得號碼牌</p>
 
-    <form id="queue-form">
-      <input type="text" name="name" placeholder="顯示名稱（例如 王小明）" required>
+    <!-- 目前號碼（醒目） -->
+    <div id="now-serving" class="now-serving">
+      <small>目前號碼</small>
+      <span id="current-number">載入中…</span>
+    </div>
+
+    <form id="queue-form" autocomplete="off">
+      <input type="text" name="name" placeholder="顯示名稱（例如 王小明）" required />
       <select name="gender">
         <option value="先生">先生</option>
         <option value="小姐">小姐</option>
       </select>
-      <input type="tel" name="phone" placeholder="手機號碼" required>
-      <button type="submit" class="primary">📥 排隊拿號碼牌</button>
+      <input type="tel" name="phone" placeholder="手機號碼" required />
+      <button id="submit-btn" type="submit" class="primary">📥 排隊拿號碼牌</button>
     </form>
 
     <div id="result" class="hidden">
       <h2>✅ 您的號碼是：<span id="ticket-number"></span></h2>
-      <p id="display-name"></p>
+      <p id="display-name" style="text-align:center;"></p>
+      <p style="text-align:center;color:#666;font-size:.9rem;">請留意現場叫號畫面與店員廣播</p>
     </div>
 
-    <hr>
+    <hr />
     <a href="./admin.html" class="admin-link">老闆叫號系統</a>
   </main>
 
   <script>
     const form = document.getElementById('queue-form');
+    const submitBtn = document.getElementById('submit-btn');
     const resultBox = document.getElementById('result');
     const ticketNum = document.getElementById('ticket-number');
     const displayName = document.getElementById('display-name');
+    const currentNumberEl = document.getElementById('current-number');
+
+    async function refreshCurrent() {
+      try {
+        const res = await fetch('/api/current', { method: 'GET' });
+        if (!res.ok) throw new Error('current API error');
+        const data = await res.json();
+        if (!data.current) {
+          currentNumberEl.textContent = '尚未開始';
+          return;
+        }
+        currentNumberEl.textContent = `${data.current.number} 號`;
+      } catch {
+        currentNumberEl.textContent = '讀取失敗';
+      }
+    }
+    refreshCurrent();
+    setInterval(refreshCurrent, 3000);
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const formData = new FormData(form);
-      const payload = {
-        name: formData.get('name'),
-        gender: formData.get('gender'),
-        phone: formData.get('phone')
-      };
+      submitBtn.disabled = true;
+      submitBtn.textContent = '處理中…';
 
-      const res = await fetch('/api/queue', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
+      try {
+        const formData = new FormData(form);
+        const payload = {
+          name: (formData.get('name') || '').trim(),
+          gender: formData.get('gender'),
+          phone: (formData.get('phone') || '').trim()
+        };
 
-      const data = await res.json();
-      if (data.success) {
-        form.classList.add('hidden');
-        resultBox.classList.remove('hidden');
-        ticketNum.textContent = data.number + " 號";
-        displayName.textContent = `${payload.name} ${payload.gender}`;
-      } else {
-        alert(data.message || '系統錯誤，請稍後再試');
+        if (!payload.name || !payload.phone) {
+          alert('請完整填寫資料');
+          return;
+        }
+
+        const res = await fetch('/api/queue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, // 關鍵
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error(`取號失敗 (${res.status})`);
+        const data = await res.json();
+
+        if (data.success) {
+          form.classList.add('hidden');
+          resultBox.classList.remove('hidden');
+          ticketNum.textContent = data.number + ' 號';
+          displayName.textContent = `${payload.name} ${payload.gender}`;
+          refreshCurrent();
+        } else {
+          alert(data.message || '系統錯誤，請稍後再試');
+        }
+      } catch {
+        alert('送出失敗，請稍後再試');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '📥 排隊拿號碼牌';
       }
     });
   </script>

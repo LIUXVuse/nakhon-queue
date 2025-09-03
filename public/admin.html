@@ -1,71 +1,95 @@
-<!-- public/admin.html -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>叫號後台 - 那空沙旺</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css" />
+  <style>
+    .big { font-size:2.2rem; font-weight:800; text-align:center; letter-spacing:.04em; }
+    .muted { color:#666; font-size:.95rem; text-align:center; }
+    .admin-actions { display:flex; gap:10px; margin-top:14px; }
+    .admin-actions > button { flex:1; }
+  </style>
 </head>
 <body>
   <main class="container">
     <h1>🔒 老闆叫號後台</h1>
 
     <div id="auth-section">
-      <input type="password" id="admin-password" placeholder="請輸入密碼">
-      <button onclick="verifyPassword()">登入</button>
+      <input type="password" id="admin-password" placeholder="請輸入密碼" />
+      <button id="login-btn">登入</button>
     </div>
 
     <div id="admin-panel" class="hidden">
-      <h2>👥 目前號碼：<span id="current-number">尚未開始</span></h2>
-      <p id="current-info">--</p>
-      <button onclick="nextNumber()" class="primary">▶️ 下一號</button>
-      <button onclick="resetQueue()" class="danger">🔁 重置所有號碼</button>
+      <div class="muted">目前號碼</div>
+      <div id="current-number" class="big">尚未開始</div>
+      <div id="current-info" class="muted">--</div>
+
+      <div class="admin-actions">
+        <button id="next-btn" class="primary">▶️ 下一號</button>
+        <button id="reset-btn" class="danger">🔁 重置全部</button>
+      </div>
     </div>
   </main>
 
   <script>
+    const auth = document.getElementById('auth-section');
+    const panel = document.getElementById('admin-panel');
+    const pwdInput = document.getElementById('admin-password');
+    const currentNumEl = document.getElementById('current-number');
+    const currentInfoEl = document.getElementById('current-info');
+
     let password = '';
 
-    function verifyPassword() {
-      const input = document.getElementById('admin-password').value;
-      if (input === 'sawanpass') {
-        password = input;
-        document.getElementById('auth-section').classList.add('hidden');
-        document.getElementById('admin-panel').classList.remove('hidden');
-        fetchCurrent();
-      } else {
-        alert('密碼錯誤');
-      }
-    }
+    document.getElementById('login-btn').addEventListener('click', () => {
+      const val = pwdInput.value.trim();
+      if (!val) return alert('請輸入密碼');
+      password = val;
+      auth.classList.add('hidden');
+      panel.classList.remove('hidden');
+      fetchCurrent();
+    });
 
     async function fetchCurrent() {
-      const res = await fetch(`/api/current`);
-      const data = await res.json();
-      if (data.current) {
-        document.getElementById('current-number').textContent = `${data.current.number} 號`;
-        document.getElementById('current-info').textContent = `${data.current.name} ${data.current.gender}`;
+      try {
+        const res = await fetch('/api/current');
+        const data = await res.json();
+        if (data?.current) {
+          currentNumEl.textContent = `${data.current.number} 號`;
+          currentInfoEl.textContent = `${data.current.name || ''} ${data.current.gender || ''}`.trim() || '--';
+        } else {
+          currentNumEl.textContent = '尚未開始';
+          currentInfoEl.textContent = '--';
+        }
+      } catch {
+        currentNumEl.textContent = '讀取失敗';
       }
     }
+    setInterval(() => {
+      if (!panel.classList.contains('hidden')) fetchCurrent();
+    }, 3000);
 
-    async function nextNumber() {
-      const res = await fetch(`/api/next?password=${password}`);
+    document.getElementById('next-btn').addEventListener('click', async () => {
+      if (!password) return alert('尚未登入');
+      const res = await fetch(`/api/next?password=${encodeURIComponent(password)}`);
       const data = await res.json();
       if (data.success) fetchCurrent();
-      else alert(data.message);
-    }
+      else alert(data.message || '操作失敗');
+    });
 
-    async function resetQueue() {
-      if (confirm('確定要重置全部號碼嗎？')) {
-        const res = await fetch(`/api/reset?password=${password}`);
-        const data = await res.json();
-        if (data.success) {
-          alert('已重置');
-          fetchCurrent();
-        } else {
-          alert(data.message);
-        }
+    document.getElementById('reset-btn').addEventListener('click', async () => {
+      if (!password) return alert('尚未登入');
+      if (!confirm('確定要重置全部號碼嗎？')) return;
+      const res = await fetch(`/api/reset?password=${encodeURIComponent(password)}`);
+      const data = await res.json();
+      if (data.success) {
+        alert('已重置');
+        fetchCurrent();
+      } else {
+        alert(data.message || '操作失敗');
       }
-    }
+    });
   </script>
 </body>
 </html>
