@@ -10,10 +10,12 @@ export async function onRequestPost({ request, env }) {
         gender: data.gender || "",
         phone: data.phone || "",
       }),
-      { expirationTtl: 7200 } // 2小時
+      { expirationTtl: 7200 }
     );
     await env.QUEUE.put("lastNumber", String(number));
   
-    return Response.json({ success: true, number });
+    return new Response(JSON.stringify({ success: true, number }), {
+      headers: { "content-type": "application/json" },
+    });
   }
   
