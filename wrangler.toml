@@ -11,3 +11,5 @@ binding = "QUEUE"
 id = "271878c58f2f4094a9a7f7a3066aa822"
 preview_id = "271878c58f2f4094a9a7f7a3066aa822"
 
+[vars]
+ADMIN_PASSWORD = "sawanpass"
