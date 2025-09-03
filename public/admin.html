@@ -14,7 +14,7 @@
     .row { display:flex; gap:8px; justify-content:center; }
     .queue-list { margin-top:14px; }
     .queue-item { display:flex; justify-content:space-between; padding:10px 12px; border:1px solid #eee; border-radius:8px; margin-top:8px; background:#fafafa; font-size:.95rem;}
-    .label { color:#666; font-size:.92rem; }
+    .label { color:#666; font-size:.92rem; text-align:center; margin-top:4px;}
     .voice { display:flex; align-items:center; gap:6px; justify-content:center; margin-top:8px; color:#444; }
   </style>
 </head>
@@ -60,13 +60,21 @@
     const lineupEl = document.getElementById('lineup');
     const speakToggle = document.getElementById('speak-toggle');
 
+    // 若上一頁已登入，直接顯示面板
+    if (sessionStorage.getItem('adminOK') === '1') {
+      auth.remove();
+      panel.classList.remove('hidden');
+      refreshAll();
+    }
+
     let password = '';
 
     document.getElementById('login-btn').addEventListener('click', () => {
       const val = pwdInput.value.trim();
       if (!val) return alert('請輸入密碼');
       password = val;
-      auth.classList.add('hidden');
+      sessionStorage.setItem('adminOK', '1'); // 記住一次
+      auth.remove();                          // 直接移除登入列（不留空位）
       panel.classList.remove('hidden');
       refreshAll();
     });
@@ -128,7 +136,7 @@
         } else {
           alert(data.message || '操作失敗');
         }
-      } catch (e) {
+      } catch {
         alert('操作失敗');
       } finally {
         btn.disabled = false;

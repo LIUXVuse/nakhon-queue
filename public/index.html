@@ -9,6 +9,7 @@
     .now-serving{ text-align:center;margin:10px 0 18px;font-weight:800;font-size:1.6rem;letter-spacing:.04em;}
     .now-serving small{ display:block;font-weight:500;font-size:.95rem;color:#666;letter-spacing:0;margin-bottom:6px;}
     .notice { text-align:center;color:#b45309;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:8px 10px;margin:10px 0 16px;font-size:.95rem;}
+    .voice { display:flex; align-items:center; gap:6px; justify-content:center; margin:6px 0 4px; color:#444; }
   </style>
 </head>
 <body>
@@ -21,6 +22,11 @@
     <div id="now-serving" class="now-serving">
       <small>目前號碼</small>
       <span id="current-number">載入中…</span>
+    </div>
+
+    <div class="voice">
+      <input type="checkbox" id="speak-toggle" />
+      <label for="speak-toggle">開啟「到號」語音播報</label>
     </div>
 
     <form id="queue-form" autocomplete="off">
@@ -44,7 +50,8 @@
   </main>
 
   <script>
-    const LS_KEY = 'nakhon_queue_ticket';
+    const LS_TICKET = 'nakhon_queue_ticket';
+    const LS_SPEAK  = 'nakhon_queue_speak';
     const TTL_MS = 2 * 60 * 60 * 1000; // 2 小時
 
     const form = document.getElementById('queue-form');
@@ -53,6 +60,28 @@
     const ticketNum = document.getElementById('ticket-number');
     const displayName = document.getElementById('display-name');
     const currentNumberEl = document.getElementById('current-number');
+    const speakToggle = document.getElementById('speak-toggle');
+
+    // --- 語音設定 ---
+    (function initSpeak(){
+      const saved = localStorage.getItem(LS_SPEAK);
+      speakToggle.checked = saved === '1';
+      speakToggle.addEventListener('change', () => {
+        localStorage.setItem(LS_SPEAK, speakToggle.checked ? '1' : '0');
+        // 勾選本身就是一次使用者互動，可讓瀏覽器允許 TTS
+      });
+    })();
+
+    function speak(text){
+      if(!speakToggle.checked) return;
+      if(!('speechSynthesis' in window)) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-TW';
+      u.rate = 1.0;
+      u.pitch = 1.0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
 
     function showMyTicket(obj){
       form.classList.add('hidden');
@@ -61,27 +90,65 @@
       displayName.textContent = `${obj.name || ''} ${obj.gender || ''}`.trim();
     }
 
+    function clearTicketUI(){
+      resultBox.classList.add('hidden');
+      form.classList.remove('hidden');
+    }
+
     function tryRestoreFromLocal(){
       try{
-        const raw = localStorage.getItem(LS_KEY);
-        if(!raw) return;
+        const raw = localStorage.getItem(LS_TICKET);
+        if(!raw) return null;
         const obj = JSON.parse(raw);
-        if(!obj || !obj.ts) return;
+        if(!obj || !obj.ts) return null;
         if(Date.now() - obj.ts <= TTL_MS){
           showMyTicket(obj);
+          return obj;
         }else{
-          localStorage.removeItem(LS_KEY);
+          localStorage.removeItem(LS_TICKET);
         }
       }catch{}
+      return null;
     }
+
+    let lastServerVersion = 0;
+    let lastAnnounced = 0;
+    let myTicket = tryRestoreFromLocal();
 
     async function refreshCurrent() {
       try {
-        const res = await fetch('/api/current', { method: 'GET' });
+        const res = await fetch('/api/current');
         if (!res.ok) throw new Error('current API error');
         const data = await res.json();
+
+        // 版本同步：若重置發生，清掉本地票
+        const serverVer = typeof data.version === 'number' ? data.version : (typeof data.version === 'string' ? parseInt(data.version) : 0);
+        if (serverVer !== lastServerVersion) {
+          lastServerVersion = serverVer;
+          // 如果我的票是舊版本，清除
+          try {
+            const raw = localStorage.getItem(LS_TICKET);
+            if (raw) {
+              const obj = JSON.parse(raw);
+              if (obj && obj.ver !== serverVer) {
+                localStorage.removeItem(LS_TICKET);
+                myTicket = null;
+                clearTicketUI();
+              }
+            }
+          } catch {}
+        }
+
+        // 顯示目前號碼 + 客戶端語音
         if (data.current) {
-          currentNumberEl.textContent = `${data.current.number} 號`;
+          const curr = parseInt(data.current.number) || 0;
+          currentNumberEl.textContent = `${curr} 號`;
+
+          if (curr > lastAnnounced) {
+            // 新的號碼 → 播報一次
+            speak(`請 ${curr} 號到櫃檯`);
+            lastAnnounced = curr;
+          }
         } else if (typeof data.last === 'number' && data.last > 0) {
           currentNumberEl.textContent = `已發到 ${data.last} 號`;
         } else {
@@ -92,7 +159,6 @@
       }
     }
 
-    tryRestoreFromLocal();
     refreshCurrent();
     setInterval(refreshCurrent, 3000);
 
@@ -123,8 +189,16 @@
         const data = await res.json();
 
         if (data.success) {
-          const my = { ...payload, number: data.number, ts: Date.now() };
-          localStorage.setItem(LS_KEY, JSON.stringify(my));
+          // 取得當前版本以一起保存
+          let ver = lastServerVersion;
+          try {
+            const c = await (await fetch('/api/current')).json();
+            ver = typeof c.version === 'number' ? c.version : parseInt(c.version || '0');
+          } catch {}
+
+          const my = { ...payload, number: data.number, ts: Date.now(), ver };
+          localStorage.setItem(LS_TICKET, JSON.stringify(my));
+          myTicket = my;
           showMyTicket(my);
           refreshCurrent();
         } else {

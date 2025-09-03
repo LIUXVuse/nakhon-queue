@@ -8,7 +8,9 @@ export async function onRequestGet({ request, env }) {
     }
     await env.QUEUE.put("lastNumber", "0");
     await env.QUEUE.put("currentNumber", "0");
-    return new Response(JSON.stringify({ success: true }), {
+    const v = parseInt((await env.QUEUE.get("resetVersion")) || "0") || 0;
+    await env.QUEUE.put("resetVersion", String(v + 1)); // 版本遞增，通知前端清票
+    return new Response(JSON.stringify({ success: true, version: v + 1 }), {
       headers: { "content-type": "application/json" },
     });
   }
