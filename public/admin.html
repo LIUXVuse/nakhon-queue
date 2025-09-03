@@ -10,25 +10,42 @@
     .muted { color:#666; font-size:.95rem; text-align:center; }
     .admin-actions { display:flex; gap:10px; margin-top:14px; }
     .admin-actions > button { flex:1; }
+    .card { max-width:520px; margin:40px auto; padding:24px 20px; background:#fff; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.08); }
+    .row { display:flex; gap:8px; justify-content:center; }
+    .queue-list { margin-top:14px; }
+    .queue-item { display:flex; justify-content:space-between; padding:10px 12px; border:1px solid #eee; border-radius:8px; margin-top:8px; background:#fafafa; font-size:.95rem;}
+    .label { color:#666; font-size:.92rem; }
+    .voice { display:flex; align-items:center; gap:6px; justify-content:center; margin-top:8px; color:#444; }
   </style>
 </head>
 <body>
-  <main class="container">
+  <main class="card">
     <h1>🔒 老闆叫號後台</h1>
 
-    <div id="auth-section">
+    <div id="auth-section" class="row">
       <input type="password" id="admin-password" placeholder="請輸入密碼" />
       <button id="login-btn">登入</button>
     </div>
 
     <div id="admin-panel" class="hidden">
-      <div class="muted">目前號碼</div>
+      <div class="label">目前號碼</div>
       <div id="current-number" class="big">尚未開始</div>
       <div id="current-info" class="muted">--</div>
+      <div id="current-phone" class="muted">--</div>
+
+      <div class="voice">
+        <input type="checkbox" id="speak-toggle" checked />
+        <label for="speak-toggle">啟用語音播報</label>
+      </div>
 
       <div class="admin-actions">
         <button id="next-btn" class="primary">▶️ 下一號</button>
         <button id="reset-btn" class="danger">🔁 重置全部</button>
+      </div>
+
+      <div class="queue-list">
+        <div class="label">後面排隊（前 5 位）</div>
+        <div id="lineup"></div>
       </div>
     </div>
   </main>
@@ -39,6 +56,9 @@
     const pwdInput = document.getElementById('admin-password');
     const currentNumEl = document.getElementById('current-number');
     const currentInfoEl = document.getElementById('current-info');
+    const currentPhoneEl = document.getElementById('current-phone');
+    const lineupEl = document.getElementById('lineup');
+    const speakToggle = document.getElementById('speak-toggle');
 
     let password = '';
 
@@ -48,44 +68,81 @@
       password = val;
       auth.classList.add('hidden');
       panel.classList.remove('hidden');
-      fetchCurrent();
+      refreshAll();
     });
 
+    function speak(text) {
+      if (!speakToggle.checked || !('speechSynthesis' in window)) return;
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-TW';
+      u.rate = 1.0;
+      u.pitch = 1.0;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    }
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    }
+
     async function fetchCurrent() {
-      try {
-        const res = await fetch('/api/current');
-        const data = await res.json();
-        if (data?.current) {
-          currentNumEl.textContent = `${data.current.number} 號`;
-          currentInfoEl.textContent = `${data.current.name || ''} ${data.current.gender || ''}`.trim() || '--';
-        } else {
-          currentNumEl.textContent = '尚未開始';
-          currentInfoEl.textContent = '--';
-        }
-      } catch {
-        currentNumEl.textContent = '讀取失敗';
+      const data = await fetchJSON('/api/current');
+      if (data?.current) {
+        currentNumEl.textContent = `${data.current.number} 號`;
+        currentInfoEl.textContent = `${data.current.name || ''} ${data.current.gender || ''}`.trim() || '--';
+        currentPhoneEl.textContent = data.current.phone ? `手機：${data.current.phone}` : '--';
+      } else {
+        currentNumEl.textContent = '尚未開始';
+        currentInfoEl.textContent = '--';
+        currentPhoneEl.textContent = '--';
       }
     }
+
+    async function fetchLineup() {
+      const data = await fetchJSON('/api/lineup?limit=5');
+      const rows = data.next || [];
+      lineupEl.innerHTML = rows.length
+        ? rows.map(r => `<div class="queue-item"><div>🔜 ${r.number} 號</div><div>${(r.name || '') + ' ' + (r.gender || '')}</div><div>${r.phone || ''}</div></div>`).join('')
+        : '<div class="muted">目前沒有後續排隊</div>';
+    }
+
+    async function refreshAll() {
+      await Promise.all([fetchCurrent(), fetchLineup()]);
+    }
+
     setInterval(() => {
-      if (!panel.classList.contains('hidden')) fetchCurrent();
+      if (!panel.classList.contains('hidden')) refreshAll();
     }, 3000);
 
     document.getElementById('next-btn').addEventListener('click', async () => {
       if (!password) return alert('尚未登入');
-      const res = await fetch(`/api/next?password=${encodeURIComponent(password)}`);
-      const data = await res.json();
-      if (data.success) fetchCurrent();
-      else alert(data.message || '操作失敗');
+      const btn = document.getElementById('next-btn');
+      btn.disabled = true;
+      try {
+        const data = await fetchJSON(`/api/next?password=${encodeURIComponent(password)}`);
+        if (data.success) {
+          speak(`請 ${data.number} 號到櫃檯`);
+          await refreshAll();
+        } else {
+          alert(data.message || '操作失敗');
+        }
+      } catch (e) {
+        alert('操作失敗');
+      } finally {
+        btn.disabled = false;
+      }
     });
 
     document.getElementById('reset-btn').addEventListener('click', async () => {
       if (!password) return alert('尚未登入');
       if (!confirm('確定要重置全部號碼嗎？')) return;
-      const res = await fetch(`/api/reset?password=${encodeURIComponent(password)}`);
-      const data = await res.json();
+      const data = await fetchJSON(`/api/reset?password=${encodeURIComponent(password)}`);
       if (data.success) {
+        window.speechSynthesis?.cancel();
+        await refreshAll();
         alert('已重置');
-        fetchCurrent();
       } else {
         alert(data.message || '操作失敗');
       }

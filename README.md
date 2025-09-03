@@ -1,103 +1,81 @@
-# Nakhon Sawan 船麵叫號系統 (QueueMe for Boat Noodles)
+# 那空沙旺船麵 叫號系統（Cloudflare Pages + Functions）
 
-> 一套專為餐飲門市設計的極簡無登入叫號系統  
+> 行動裝置優先、無需登入、二小時自動清除資料的叫號系統  
 > 店名：**那空沙旺船麵จังหวัดนครสวรรค์**  
-> MVP 版本：支援取號、叫號、資料自動清除，未來可擴充點餐功能。
+> 狀態：**已採用 Cloudflare Pages 檔案式 Functions + KV**
 
-## 🚀 專案簡介
+## ✨ 功能概覽
+- 顧客掃 QR 進站 → 填姓名/稱謂/手機 → 一鍵取號
+- 首頁顯示「目前號碼」，自動輪詢更新
+- 顧客的**取號結果會保存在本機（localStorage）2 小時**，換頁或刷新仍可顯示
+- 老闆後台：輸入密碼 →  
+  - 顯示**目前號碼 + 顧客姓名/稱謂 + 手機**  
+  - **下一號**（語音自動播報「請 X 號到櫃檯」）  
+  - **重置全部**（清空並從 1 號開始）  
+  - **下一隊列清單**（預設顯示接下來 5 位，會隨叫號自動遞補）
+- 伺服端資料以 **KV** 儲存，**TTL=7200 秒（2 小時）** 自動過期
 
-這是一個用於餐飲業的**網頁版叫號系統**，可供用戶透過手機掃描 QR Code 取號。系統具有**無需登入、自動清除資料、簡易管理後台**等功能，部署在 **Cloudflare Pages / Workers** 上，支援高效、低延遲的店內使用場景。
+## 🧱 架構與技術
+- **前端**：純 HTML / CSS / JavaScript（行動優先）
+- **後端**：Cloudflare Pages 檔案式 Functions（`/functions/api/*.js`）
+- **儲存**：Cloudflare Workers KV（keys：`lastNumber`、`currentNumber`、`ticket:{n}`）
+- **部署**：Cloudflare Pages（**不需要 build 指令**）
 
-## 🧩 技術棧
+/functions/api
+├── current.js # GET /api/current
+├── health.js # GET /api/health
+├── next.js # GET /api/next?password=...
+├── ping.js # GET /api/ping
+├── queue.js # POST /api/queue
+└── lineup.js # GET /api/lineup?limit=5 ← 顯示後面排隊清單
+/public
+├── index.html # 顧客端（含 localStorage 保存號碼）
+├── admin.html # 老闆後台（含語音播報、下一隊列清單）
+└── style.css
 
-- **前端**：HTML + CSS + JavaScript (Vanilla)
-- **後端**：Cloudflare Workers (使用 KV 儲存暫存資料)
-- **部署**：Cloudflare Pages + Workers
-- **資料儲存**：Cloudflare Workers KV (提供短期記憶體)
+markdown
+複製程式碼
 
----
+## ⚙ Cloudflare Pages 設定
+- **Framework**：None  
+- **Build command**：留空  
+- **Output directory**：`public`  
+- **Variables**：  
+  - `ADMIN_PASSWORD`（例如 `sawanpass`）
+- **Functions → Bindings**：  
+  - KV Namespace → **Name：`QUEUE`**，Namespace：選你的 KV
 
-## 📱 使用流程（顧客端）
+> 不使用 `wrangler.toml`；若仍在 repo 中，建議移除。
 
-1. 顧客掃描店家提供的 QR Code（導向主要網頁 `/`）
-2. 點選首頁醒目的「📥 取號排隊」按鈕
-3. 輸入下列資料：
-   - 顯示名稱（無長度限制）
-   - 性別選項：「先生 / 小姐」
-   - 手機號碼（用於防重複與紀錄）
-4. 成功送出後，顯示個人叫號資訊：
-   - 「您的號碼：**XX 號**」
-   - 「顯示名稱：**XXX先生/小姐**」
-5. 顧客不需登入，資料將**保留 2 小時後自動消失**
+## 🔌 API 介面
+- `POST /api/queue` → 取號  
+  body: `{ name, gender, phone }`  
+  res: `{ success: true, number }`
+- `GET /api/current` → 目前叫號  
+  res: `{ current: { number, name, gender, phone } }` 或 `{ current: null, last }`
+- `GET /api/next?password=***` → 下一號  
+  res: `{ success: true, number }`
+- `GET /api/reset?password=***` → 重置  
+  res: `{ success: true }`
+- `GET /api/lineup?limit=5` → 後面排隊清單  
+  res: `{ totalWaiting, next: [{ number, name, gender, phone }, ...] }`
+- `GET /api/health` / `GET /api/ping` → 診斷
 
----
+## 🔐 安全
+- 後台密碼改以 **環境變數 `ADMIN_PASSWORD`** 管理（程式不硬碼）
+- 不儲存長期個資；手機號與取號資訊**2 小時後自動過期**
+- 管理端不公開入口（僅從首頁底部連結進入）
 
-## 🧑‍🍳 使用流程（老闆端）
+## 🧪 開發
+- 推到 GitHub → Pages 自動部署  
+- 需要本地模擬可用：  
+  `npx wrangler pages dev public --kv=QUEUE --binding ADMIN_PASSWORD=yourpass`
 
-1. 在主頁最下方點選「老闆叫號系統」按鈕
-2. 輸入後台密碼（預設為 `sawanpass`）
-3. 進入後台功能介面，功能如下：
-   - ✅ **目前號碼顯示**
-   - ▶️ **下一號** 按鈕（醒目顯示，點擊依序叫號）
-   - 🔁 **重置排隊** 按鈕（打烊時點選，清除所有號碼）
-
----
-
-## 🧠 資料處理邏輯
-
-- 客戶端資料（號碼、名稱、時間）以 **KV 儲存**，設定 **TTL（Time-to-Live）為 2 小時**
-- 不使用 Cookie 或登入機制，完全依據 IP / 手機簡單識別
-- 每日手動點擊「重置」將清除所有資料並從 1 號重新開始
-
----
-
-## 🔐 安全設計
-
-- 後台密碼：預設為 `sawanpass`，建議部署後修改至環境變數中（Cloudflare Secret）
-- 客戶端無法進入後台介面，僅能排隊
-- 不儲存敏感資料（例如完整手機號碼加密處理）
-
----
-
-## 🌱 可擴充規劃（Future Plan）
-
-此系統架構保留以下擴充性：
-
-- 📋 **線上點餐功能**
-- 🧾 顯示叫號歷史、點餐歷史
-- 🔔 推播通知功能（LINE Notify / SMS）
-- 🌐 多語系支援（泰文 / 中文 / 英文）
-
----
-
-## 🛠 專案架構
-
-/src
-├── index.html # 首頁（取號入口）
-├── style.css # 頁面樣式
-├── script.js # 顧客端 JS
-├── admin.html # 老闆後台介面
-├── admin.js # 後台邏輯
-└── worker.js # Cloudflare Workers API
+## 🗺️ Roadmap
+- LINE Notify / SMS 到號通知
+- 多語系（中/英/泰）
+- 點餐模組（保留擴充位）
+- 後台顯示叫號歷史與統計
 
 ---
-
-## 🧪 開發與測試方式
-
-1. 使用 [Wrangler](https://developers.cloudflare.com/workers/wrangler/) 進行本地測試：
-   ```bash
-   wrangler dev
-部署至 Cloudflare Pages：
-
-wrangler publish
-⚠ 注意事項
-
-建議部署時將 sawanpass 改為環境變數設定
-
-系統僅支援同時一線排隊，不支援分桌與多重佇列
-
-適合「現場現做、現場叫號」的簡易流程餐廳
-
-📄 License
-
-MIT License © 那空沙旺船麵 จังหวัดนครสวรรค์
+本 README 係在你原始版本基礎上全面更新，以符合目前 Pages 檔案式 Functions 的實作。:contentReference[oaicite:0]{index=0}
