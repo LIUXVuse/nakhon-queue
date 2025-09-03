@@ -26,7 +26,7 @@
 
     <div class="voice">
       <input type="checkbox" id="speak-toggle" />
-      <label for="speak-toggle">開啟「到號」語音播報</label>
+      <label for="speak-toggle">開啟「到號」語音播報（行動裝置請先點一下以解鎖音訊）</label>
     </div>
 
     <form id="queue-form" autocomplete="off">
@@ -62,27 +62,78 @@
     const currentNumberEl = document.getElementById('current-number');
     const speakToggle = document.getElementById('speak-toggle');
 
-    // --- 語音設定 ---
-    (function initSpeak(){
-      const saved = localStorage.getItem(LS_SPEAK);
-      speakToggle.checked = saved === '1';
-      speakToggle.addEventListener('change', () => {
-        localStorage.setItem(LS_SPEAK, speakToggle.checked ? '1' : '0');
-        // 勾選本身就是一次使用者互動，可讓瀏覽器允許 TTS
-      });
-    })();
+    // ---------- 音訊解鎖 + 語音 ----------
+    let audioUnlocked = false;
+    let audioCtx = null;
+    let lastAnnounced = 0;
+    let lastServerVersion = 0;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          audioCtx = audioCtx || new Ctx();
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0.0001;
+          osc.connect(gain).connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.01);
+        }
+      } catch {}
+
+      try {
+        if ('speechSynthesis' in window) {
+          const u = new SpeechSynthesisUtterance('語音已啟用');
+          u.lang = 'zh-TW';
+          u.volume = 0;
+          window.speechSynthesis.speak(u);
+        }
+      } catch {}
+    }
+
+    function chooseVoice() {
+      try {
+        const voices = window.speechSynthesis?.getVoices() || [];
+        const prefs = ['zh-TW','zh-HK','yue','zh-CN','zh'];
+        for (const code of prefs) {
+          const v = voices.find(v => v.lang && v.lang.startsWith(code));
+          if (v) return v;
+        }
+        return voices[0];
+      } catch { return null; }
+    }
 
     function speak(text){
       if(!speakToggle.checked) return;
       if(!('speechSynthesis' in window)) return;
+      unlockAudio();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-TW';
-      u.rate = 1.0;
-      u.pitch = 1.0;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
+      const v = chooseVoice();
+      if (v) u.voice = v;
+      try { window.speechSynthesis.cancel(); } catch {}
+      setTimeout(() => { try { window.speechSynthesis.speak(u); } catch {} }, 0);
     }
 
+    window.speechSynthesis?.addEventListener('voiceschanged', () => {});
+    speakToggle.addEventListener('change', () => {
+      localStorage.setItem(LS_SPEAK, speakToggle.checked ? '1' : '0');
+      if (speakToggle.checked) unlockAudio();
+    });
+    document.addEventListener('touchstart', unlockAudio, { once:true, passive:true });
+    document.addEventListener('click', unlockAudio, { once:true });
+
+    (function initSpeakToggle(){
+      const saved = localStorage.getItem(LS_SPEAK);
+      speakToggle.checked = saved === '1';
+    })();
+
+    // ---------- 我的票（本機保存） ----------
     function showMyTicket(obj){
       form.classList.add('hidden');
       resultBox.classList.remove('hidden');
@@ -111,21 +162,19 @@
       return null;
     }
 
-    let lastServerVersion = 0;
-    let lastAnnounced = 0;
     let myTicket = tryRestoreFromLocal();
 
+    // ---------- 輪詢目前號碼 ----------
     async function refreshCurrent() {
       try {
         const res = await fetch('/api/current');
         if (!res.ok) throw new Error('current API error');
         const data = await res.json();
 
-        // 版本同步：若重置發生，清掉本地票
+        // 重置同步：若伺服器 version 改變，清除本地票
         const serverVer = typeof data.version === 'number' ? data.version : (typeof data.version === 'string' ? parseInt(data.version) : 0);
         if (serverVer !== lastServerVersion) {
           lastServerVersion = serverVer;
-          // 如果我的票是舊版本，清除
           try {
             const raw = localStorage.getItem(LS_TICKET);
             if (raw) {
@@ -139,13 +188,12 @@
           } catch {}
         }
 
-        // 顯示目前號碼 + 客戶端語音
         if (data.current) {
           const curr = parseInt(data.current.number) || 0;
           currentNumberEl.textContent = `${curr} 號`;
 
+          // 新號碼到 → 客戶端語音（若開啟）
           if (curr > lastAnnounced) {
-            // 新的號碼 → 播報一次
             speak(`請 ${curr} 號到櫃檯`);
             lastAnnounced = curr;
           }
@@ -162,6 +210,7 @@
     refreshCurrent();
     setInterval(refreshCurrent, 3000);
 
+    // ---------- 取號 ----------
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       submitBtn.disabled = true;
@@ -189,7 +238,7 @@
         const data = await res.json();
 
         if (data.success) {
-          // 取得當前版本以一起保存
+          // 取得當前 version 一起保存
           let ver = lastServerVersion;
           try {
             const c = await (await fetch('/api/current')).json();

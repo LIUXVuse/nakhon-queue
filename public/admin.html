@@ -35,7 +35,7 @@
 
       <div class="voice">
         <input type="checkbox" id="speak-toggle" checked />
-        <label for="speak-toggle">啟用語音播報</label>
+        <label for="speak-toggle">啟用語音播報（行動裝置請先點一下以解鎖音訊）</label>
       </div>
 
       <div class="admin-actions">
@@ -60,7 +60,77 @@
     const lineupEl = document.getElementById('lineup');
     const speakToggle = document.getElementById('speak-toggle');
 
-    // 若上一頁已登入，直接顯示面板
+    // -------- 音訊解鎖 + 語音穩定化（手機必備）--------
+    let audioUnlocked = false;
+    let audioCtx = null;
+
+    function unlockAudio() {
+      if (audioUnlocked) return;
+      audioUnlocked = true;
+
+      // 1) 解鎖 WebAudio（iOS 需要用手勢觸發才能 resume）
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          audioCtx = audioCtx || new Ctx();
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0.0001; // 幾乎無聲
+          osc.connect(gain).connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.01);
+        }
+      } catch {}
+
+      // 2) 暖機 TTS（有些裝置第一次需要 speak 一下才會出聲）
+      try {
+        if ('speechSynthesis' in window) {
+          const u = new SpeechSynthesisUtterance('語音已啟用');
+          u.lang = 'zh-TW';
+          u.volume = 0; // 靜音暖機
+          window.speechSynthesis.speak(u);
+        }
+      } catch {}
+    }
+
+    function chooseVoice() {
+      try {
+        const voices = window.speechSynthesis?.getVoices() || [];
+        const prefs = ['zh-TW','zh-HK','yue','zh-CN','zh'];
+        for (const code of prefs) {
+          const v = voices.find(v => v.lang && v.lang.startsWith(code));
+          if (v) return v;
+        }
+        return voices[0];
+      } catch { return null; }
+    }
+
+    function speak(text) {
+      if (!speakToggle.checked) return;
+      if (!('speechSynthesis' in window)) return;
+
+      unlockAudio(); // 確保已解鎖
+
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'zh-TW';
+      const v = chooseVoice();
+      if (v) u.voice = v;
+
+      // 有些瀏覽器需要取消後非同步再 speak 才不會吞聲
+      try { window.speechSynthesis.cancel(); } catch {}
+      setTimeout(() => {
+        try { window.speechSynthesis.speak(u); } catch {}
+      }, 0);
+    }
+
+    // 如果語音列表是晚到的，更新一次候選 voice
+    window.speechSynthesis?.addEventListener('voiceschanged', () => { /* no-op: chooseVoice 會即時取 */ });
+    speakToggle.addEventListener('change', unlockAudio);
+    document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
+    document.addEventListener('click', unlockAudio, { once: true });
+
+    // -------- 登入流程 --------
     if (sessionStorage.getItem('adminOK') === '1') {
       auth.remove();
       panel.classList.remove('hidden');
@@ -68,27 +138,18 @@
     }
 
     let password = '';
-
     document.getElementById('login-btn').addEventListener('click', () => {
       const val = pwdInput.value.trim();
       if (!val) return alert('請輸入密碼');
       password = val;
-      sessionStorage.setItem('adminOK', '1'); // 記住一次
-      auth.remove();                          // 直接移除登入列（不留空位）
+      sessionStorage.setItem('adminOK', '1');
+      auth.remove();                 // 移除登入列（不佔位）
       panel.classList.remove('hidden');
+      unlockAudio();                 // 登入手勢同時解鎖音訊
       refreshAll();
     });
 
-    function speak(text) {
-      if (!speakToggle.checked || !('speechSynthesis' in window)) return;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'zh-TW';
-      u.rate = 1.0;
-      u.pitch = 1.0;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
-    }
-
+    // -------- 取資料 / UI 更新 --------
     async function fetchJSON(url) {
       const res = await fetch(url);
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -124,6 +185,7 @@
       if (!panel.classList.contains('hidden')) refreshAll();
     }, 3000);
 
+    // -------- 操作按鈕 --------
     document.getElementById('next-btn').addEventListener('click', async () => {
       if (!password) return alert('尚未登入');
       const btn = document.getElementById('next-btn');
