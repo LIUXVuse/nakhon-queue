@@ -5,17 +5,11 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>那空沙旺叫號系統</title>
   <link rel="stylesheet" href="./style.css" />
-  <style>
-    .now-serving{ text-align:center;margin:10px 0 18px;font-weight:800;font-size:1.6rem;letter-spacing:.04em;}
-    .now-serving small{ display:block;font-weight:500;font-size:.95rem;color:#666;letter-spacing:0;margin-bottom:6px;}
-    .notice { text-align:center;color:#b45309;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:8px 10px;margin:10px 0 16px;font-size:.95rem;}
-    .voice { display:flex; align-items:center; gap:6px; justify-content:center; margin:6px 0 4px; color:#444; }
-  </style>
 </head>
 <body>
-  <main class="container">
+  <main class="card">
     <h1>📢 那空沙旺叫號系統</h1>
-    <p style="text-align:center;">歡迎光臨！請填寫以下資訊取得號碼牌</p>
+    <p class="label">歡迎光臨！請填寫以下資訊取得號碼牌</p>
 
     <div class="notice">⚠️ 入座前請勿刷新頁面；若重整，系統會嘗試自動找回您的號碼（保存 2 小時）。</div>
 
@@ -26,8 +20,10 @@
 
     <div class="voice">
       <input type="checkbox" id="speak-toggle" />
-      <label for="speak-toggle">開啟「到號」語音播報（行動裝置請先點一下以解鎖音訊）</label>
+      <label for="speak-toggle">開啟「到號」語音播報</label>
+      <button id="voice-btn" type="button" class="secondary">🔊 解鎖語音</button>
     </div>
+    <div class="voice"><span class="hint">（iPhone/Android 請先點一次「解鎖語音」或切換上方勾選）</span></div>
 
     <form id="queue-form" autocomplete="off">
       <input type="text" name="name" placeholder="顯示名稱（例如 王小明）" required />
@@ -41,8 +37,8 @@
 
     <div id="result" class="hidden">
       <h2>✅ 您的號碼是：<span id="ticket-number"></span></h2>
-      <p id="display-name" style="text-align:center;"></p>
-      <p style="text-align:center;color:#666;font-size:.9rem;">請留意現場叫號畫面與店員廣播</p>
+      <p id="display-name" class="label" style="margin-top:4px;"></p>
+      <p class="label">請留意現場叫號畫面與店員廣播</p>
     </div>
 
     <hr />
@@ -52,7 +48,7 @@
   <script>
     const LS_TICKET = 'nakhon_queue_ticket';
     const LS_SPEAK  = 'nakhon_queue_speak';
-    const TTL_MS = 2 * 60 * 60 * 1000; // 2 小時
+    const TTL_MS = 2 * 60 * 60 * 1000;
 
     const form = document.getElementById('queue-form');
     const submitBtn = document.getElementById('submit-btn');
@@ -61,20 +57,18 @@
     const displayName = document.getElementById('display-name');
     const currentNumberEl = document.getElementById('current-number');
     const speakToggle = document.getElementById('speak-toggle');
+    const voiceBtn = document.getElementById('voice-btn');
 
-    // ---------- 音訊解鎖 + 語音 ----------
-    let audioUnlocked = false;
-    let audioCtx = null;
+    let audioUnlocked = false, audioCtx = null;
     let lastAnnounced = 0;
     let lastServerVersion = 0;
 
-    function unlockAudio() {
+    function unlockAudio(){
       if (audioUnlocked) return;
       audioUnlocked = true;
-
-      try {
+      try{
         const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (Ctx) {
+        if (Ctx){
           audioCtx = audioCtx || new Ctx();
           if (audioCtx.state === 'suspended') audioCtx.resume();
           const osc = audioCtx.createOscillator();
@@ -82,180 +76,146 @@
           gain.gain.value = 0.0001;
           osc.connect(gain).connect(audioCtx.destination);
           osc.start();
-          osc.stop(audioCtx.currentTime + 0.01);
+          osc.stop(audioCtx.currentTime + 0.02);
         }
-      } catch {}
-
-      try {
-        if ('speechSynthesis' in window) {
+      }catch{}
+      try{
+        if ('speechSynthesis' in window){
           const u = new SpeechSynthesisUtterance('語音已啟用');
-          u.lang = 'zh-TW';
-          u.volume = 0;
+          u.lang = 'zh-TW'; u.volume = 0;
           window.speechSynthesis.speak(u);
         }
-      } catch {}
+      }catch{}
     }
-
-    function chooseVoice() {
-      try {
+    function chooseVoice(){
+      try{
         const voices = window.speechSynthesis?.getVoices() || [];
         const prefs = ['zh-TW','zh-HK','yue','zh-CN','zh'];
-        for (const code of prefs) {
+        for (const code of prefs){
           const v = voices.find(v => v.lang && v.lang.startsWith(code));
           if (v) return v;
         }
         return voices[0];
-      } catch { return null; }
+      }catch{return null;}
     }
-
     function speak(text){
-      if(!speakToggle.checked) return;
-      if(!('speechSynthesis' in window)) return;
+      if (!speakToggle.checked) return;
+      if (!('speechSynthesis' in window)) return;
       unlockAudio();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-TW';
-      const v = chooseVoice();
-      if (v) u.voice = v;
-      try { window.speechSynthesis.cancel(); } catch {}
-      setTimeout(() => { try { window.speechSynthesis.speak(u); } catch {} }, 0);
+      const v = chooseVoice(); if (v) u.voice = v;
+      try{ window.speechSynthesis.cancel(); }catch{}
+      setTimeout(()=>{ try{ window.speechSynthesis.speak(u); }catch{} },0);
     }
 
-    window.speechSynthesis?.addEventListener('voiceschanged', () => {});
-    speakToggle.addEventListener('change', () => {
+    voiceBtn.addEventListener('click', ()=>{ unlockAudio(); speak('語音已啟用'); });
+    speakToggle.addEventListener('change', ()=>{
       localStorage.setItem(LS_SPEAK, speakToggle.checked ? '1' : '0');
       if (speakToggle.checked) unlockAudio();
     });
-    document.addEventListener('touchstart', unlockAudio, { once:true, passive:true });
-    document.addEventListener('click', unlockAudio, { once:true });
 
-    (function initSpeakToggle(){
+    // 初始語音狀態
+    (function initSpeak(){
       const saved = localStorage.getItem(LS_SPEAK);
       speakToggle.checked = saved === '1';
     })();
 
-    // ---------- 我的票（本機保存） ----------
     function showMyTicket(obj){
       form.classList.add('hidden');
       resultBox.classList.remove('hidden');
       ticketNum.textContent = obj.number + ' 號';
       displayName.textContent = `${obj.name || ''} ${obj.gender || ''}`.trim();
     }
-
     function clearTicketUI(){
       resultBox.classList.add('hidden');
       form.classList.remove('hidden');
     }
-
     function tryRestoreFromLocal(){
       try{
         const raw = localStorage.getItem(LS_TICKET);
         if(!raw) return null;
         const obj = JSON.parse(raw);
         if(!obj || !obj.ts) return null;
-        if(Date.now() - obj.ts <= TTL_MS){
-          showMyTicket(obj);
-          return obj;
-        }else{
-          localStorage.removeItem(LS_TICKET);
-        }
+        if(Date.now() - obj.ts <= TTL_MS){ showMyTicket(obj); return obj; }
+        else localStorage.removeItem(LS_TICKET);
       }catch{}
       return null;
     }
 
     let myTicket = tryRestoreFromLocal();
 
-    // ---------- 輪詢目前號碼 ----------
-    async function refreshCurrent() {
-      try {
+    async function refreshCurrent(){
+      try{
         const res = await fetch('/api/current');
         if (!res.ok) throw new Error('current API error');
         const data = await res.json();
 
-        // 重置同步：若伺服器 version 改變，清除本地票
+        // 重置版本同步
         const serverVer = typeof data.version === 'number' ? data.version : (typeof data.version === 'string' ? parseInt(data.version) : 0);
-        if (serverVer !== lastServerVersion) {
+        if (serverVer !== lastServerVersion){
           lastServerVersion = serverVer;
-          try {
+          try{
             const raw = localStorage.getItem(LS_TICKET);
-            if (raw) {
+            if (raw){
               const obj = JSON.parse(raw);
-              if (obj && obj.ver !== serverVer) {
+              if (obj && obj.ver !== serverVer){
                 localStorage.removeItem(LS_TICKET);
                 myTicket = null;
                 clearTicketUI();
               }
             }
-          } catch {}
+          }catch{}
         }
 
-        if (data.current) {
+        if (data.current){
           const curr = parseInt(data.current.number) || 0;
           currentNumberEl.textContent = `${curr} 號`;
-
-          // 新號碼到 → 客戶端語音（若開啟）
-          if (curr > lastAnnounced) {
+          if (speakToggle.checked && curr > lastAnnounced){
             speak(`請 ${curr} 號到櫃檯`);
             lastAnnounced = curr;
           }
-        } else if (typeof data.last === 'number' && data.last > 0) {
+        }else if (typeof data.last === 'number' && data.last > 0){
           currentNumberEl.textContent = `已發到 ${data.last} 號`;
-        } else {
+        }else{
           currentNumberEl.textContent = '尚未開始';
         }
-      } catch {
+      }catch{
         currentNumberEl.textContent = '讀取失敗';
       }
     }
-
     refreshCurrent();
     setInterval(refreshCurrent, 3000);
 
-    // ---------- 取號 ----------
-    form.addEventListener('submit', async (e) => {
+    form.addEventListener('submit', async (e)=>{
       e.preventDefault();
       submitBtn.disabled = true;
       submitBtn.textContent = '處理中…';
-
-      try {
-        const formData = new FormData(form);
+      try{
+        const fd = new FormData(form);
         const payload = {
-          name: (formData.get('name') || '').trim(),
-          gender: formData.get('gender'),
-          phone: (formData.get('phone') || '').trim()
+          name:(fd.get('name')||'').trim(),
+          gender:fd.get('gender'),
+          phone:(fd.get('phone')||'').trim()
         };
+        if (!payload.name || !payload.phone){ alert('請完整填寫資料'); return; }
 
-        if (!payload.name || !payload.phone) {
-          alert('請完整填寫資料');
-          return;
-        }
-
-        const res = await fetch('/api/queue', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        const res = await fetch('/api/queue',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
         if (!res.ok) throw new Error('取號失敗');
         const data = await res.json();
-
-        if (data.success) {
-          // 取得當前 version 一起保存
+        if (data.success){
           let ver = lastServerVersion;
-          try {
-            const c = await (await fetch('/api/current')).json();
-            ver = typeof c.version === 'number' ? c.version : parseInt(c.version || '0');
-          } catch {}
-
-          const my = { ...payload, number: data.number, ts: Date.now(), ver };
+          try{ const c = await (await fetch('/api/current')).json(); ver = typeof c.version === 'number' ? c.version : parseInt(c.version||'0'); }catch{}
+          const my = { ...payload, number:data.number, ts:Date.now(), ver };
           localStorage.setItem(LS_TICKET, JSON.stringify(my));
           myTicket = my;
           showMyTicket(my);
           refreshCurrent();
-        } else {
+        }else{
           alert(data.message || '系統錯誤，請稍後再試');
         }
-      } catch {
-        alert('送出失敗，請稍後再試');
-      } finally {
+      }catch{ alert('送出失敗，請稍後再試'); }
+      finally{
         submitBtn.disabled = false;
         submitBtn.textContent = '📥 排隊拿號碼牌';
       }

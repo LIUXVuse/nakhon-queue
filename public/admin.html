@@ -5,38 +5,33 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>叫號後台 - 那空沙旺</title>
   <link rel="stylesheet" href="./style.css" />
-  <style>
-    .big { font-size:2.2rem; font-weight:800; text-align:center; letter-spacing:.04em; }
-    .muted { color:#666; font-size:.95rem; text-align:center; }
-    .admin-actions { display:flex; gap:10px; margin-top:14px; }
-    .admin-actions > button { flex:1; }
-    .card { max-width:520px; margin:40px auto; padding:24px 20px; background:#fff; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.08); }
-    .row { display:flex; gap:8px; justify-content:center; }
-    .queue-list { margin-top:14px; }
-    .queue-item { display:flex; justify-content:space-between; padding:10px 12px; border:1px solid #eee; border-radius:8px; margin-top:8px; background:#fafafa; font-size:.95rem;}
-    .label { color:#666; font-size:.92rem; text-align:center; margin-top:4px;}
-    .voice { display:flex; align-items:center; gap:6px; justify-content:center; margin-top:8px; color:#444; }
-  </style>
 </head>
 <body>
   <main class="card">
     <h1>🔒 老闆叫號後台</h1>
 
-    <div id="auth-section" class="row">
+    <!-- 登入 -->
+    <div id="auth-section" class="voice">
       <input type="password" id="admin-password" placeholder="請輸入密碼" />
-      <button id="login-btn">登入</button>
+      <button id="login-btn" class="primary">登入</button>
+      <button id="voice-btn" type="button" class="secondary">🔊 解鎖語音</button>
     </div>
 
+    <!-- 後台面板 -->
     <div id="admin-panel" class="hidden">
       <div class="label">目前號碼</div>
-      <div id="current-number" class="big">尚未開始</div>
-      <div id="current-info" class="muted">--</div>
-      <div id="current-phone" class="muted">--</div>
+      <div id="current-number" class="now-serving" style="margin-top:4px;">
+        <span>尚未開始</span>
+      </div>
+      <div id="current-info" class="label">--</div>
+      <div id="current-phone" class="label">--</div>
 
       <div class="voice">
         <input type="checkbox" id="speak-toggle" checked />
-        <label for="speak-toggle">啟用語音播報（行動裝置請先點一下以解鎖音訊）</label>
+        <label for="speak-toggle">啟用語音播報</label>
+        <button id="test-voice" type="button" class="secondary">測試播報</button>
       </div>
+      <div class="voice"><span class="hint">（行動裝置請先點一次「解鎖語音」或「測試播報」）</span></div>
 
       <div class="admin-actions">
         <button id="next-btn" class="primary">▶️ 下一號</button>
@@ -54,111 +49,96 @@
     const auth = document.getElementById('auth-section');
     const panel = document.getElementById('admin-panel');
     const pwdInput = document.getElementById('admin-password');
-    const currentNumEl = document.getElementById('current-number');
+    const currentNumEl = document.getElementById('current-number').querySelector('span');
     const currentInfoEl = document.getElementById('current-info');
     const currentPhoneEl = document.getElementById('current-phone');
     const lineupEl = document.getElementById('lineup');
     const speakToggle = document.getElementById('speak-toggle');
+    const testBtn = document.getElementById('test-voice');
+    const unlockBtn = document.getElementById('voice-btn');
 
-    // -------- 音訊解鎖 + 語音穩定化（手機必備）--------
+    let password = '';
     let audioUnlocked = false;
     let audioCtx = null;
 
-    function unlockAudio() {
+    function unlockAudio(){
       if (audioUnlocked) return;
       audioUnlocked = true;
-
-      // 1) 解鎖 WebAudio（iOS 需要用手勢觸發才能 resume）
-      try {
+      // 解鎖 WebAudio
+      try{
         const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (Ctx) {
+        if (Ctx){
           audioCtx = audioCtx || new Ctx();
           if (audioCtx.state === 'suspended') audioCtx.resume();
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
-          gain.gain.value = 0.0001; // 幾乎無聲
+          gain.gain.value = 0.0001;
           osc.connect(gain).connect(audioCtx.destination);
           osc.start();
-          osc.stop(audioCtx.currentTime + 0.01);
+          osc.stop(audioCtx.currentTime + 0.02);
         }
-      } catch {}
-
-      // 2) 暖機 TTS（有些裝置第一次需要 speak 一下才會出聲）
-      try {
-        if ('speechSynthesis' in window) {
+      }catch{}
+      // 暖機 TTS
+      try{
+        if ('speechSynthesis' in window){
           const u = new SpeechSynthesisUtterance('語音已啟用');
-          u.lang = 'zh-TW';
-          u.volume = 0; // 靜音暖機
+          u.lang = 'zh-TW'; u.volume = 0;
           window.speechSynthesis.speak(u);
         }
-      } catch {}
+      }catch{}
     }
-
-    function chooseVoice() {
-      try {
+    function chooseVoice(){
+      try{
         const voices = window.speechSynthesis?.getVoices() || [];
         const prefs = ['zh-TW','zh-HK','yue','zh-CN','zh'];
-        for (const code of prefs) {
+        for (const code of prefs){
           const v = voices.find(v => v.lang && v.lang.startsWith(code));
           if (v) return v;
         }
         return voices[0];
-      } catch { return null; }
+      }catch{return null;}
     }
-
-    function speak(text) {
+    function speak(text){
       if (!speakToggle.checked) return;
       if (!('speechSynthesis' in window)) return;
-
-      unlockAudio(); // 確保已解鎖
-
+      unlockAudio();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'zh-TW';
-      const v = chooseVoice();
-      if (v) u.voice = v;
-
-      // 有些瀏覽器需要取消後非同步再 speak 才不會吞聲
-      try { window.speechSynthesis.cancel(); } catch {}
-      setTimeout(() => {
-        try { window.speechSynthesis.speak(u); } catch {}
-      }, 0);
+      const v = chooseVoice(); if (v) u.voice = v;
+      try{ window.speechSynthesis.cancel(); }catch{}
+      setTimeout(()=>{ try{ window.speechSynthesis.speak(u); }catch{} },0);
     }
 
-    // 如果語音列表是晚到的，更新一次候選 voice
-    window.speechSynthesis?.addEventListener('voiceschanged', () => { /* no-op: chooseVoice 會即時取 */ });
-    speakToggle.addEventListener('change', unlockAudio);
-    document.addEventListener('touchstart', unlockAudio, { once: true, passive: true });
-    document.addEventListener('click', unlockAudio, { once: true });
+    unlockBtn.addEventListener('click', ()=>{ unlockAudio(); speak('語音已啟用'); });
+    testBtn.addEventListener('click', ()=> speak('這是測試播報'));
 
-    // -------- 登入流程 --------
+    // 自動記住登入一次
     if (sessionStorage.getItem('adminOK') === '1') {
-      auth.remove();
+      auth.classList.add('hidden');
       panel.classList.remove('hidden');
       refreshAll();
     }
 
-    let password = '';
     document.getElementById('login-btn').addEventListener('click', () => {
       const val = pwdInput.value.trim();
       if (!val) return alert('請輸入密碼');
       password = val;
       sessionStorage.setItem('adminOK', '1');
-      auth.remove();                 // 移除登入列（不佔位）
+      auth.classList.add('hidden');
       panel.classList.remove('hidden');
-      unlockAudio();                 // 登入手勢同時解鎖音訊
+      unlockAudio();
       refreshAll();
     });
 
-    // -------- 取資料 / UI 更新 --------
-    async function fetchJSON(url) {
+    async function fetchJSON(url){
       const res = await fetch(url);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      if (!res.ok) throw new Error('HTTP '+res.status);
       return res.json();
     }
 
-    async function fetchCurrent() {
+    async function fetchCurrent(){
       const data = await fetchJSON('/api/current');
-      if (data?.current) {
+      if (data?.current){
         currentNumEl.textContent = `${data.current.number} 號`;
         currentInfoEl.textContent = `${data.current.name || ''} ${data.current.gender || ''}`.trim() || '--';
         currentPhoneEl.textContent = data.current.phone ? `手機：${data.current.phone}` : '--';
@@ -169,53 +149,39 @@
       }
     }
 
-    async function fetchLineup() {
+    async function fetchLineup(){
       const data = await fetchJSON('/api/lineup?limit=5');
       const rows = data.next || [];
       lineupEl.innerHTML = rows.length
-        ? rows.map(r => `<div class="queue-item"><div>🔜 ${r.number} 號</div><div>${(r.name || '') + ' ' + (r.gender || '')}</div><div>${r.phone || ''}</div></div>`).join('')
-        : '<div class="muted">目前沒有後續排隊</div>';
+        ? rows.map(r => `<div class="queue-item">
+            <div>🔜 ${r.number} 號</div>
+            <div>${(r.name || '') + ' ' + (r.gender || '')}</div>
+            <div>${r.phone || ''}</div>
+          </div>`).join('')
+        : '<div class="label">目前沒有後續排隊</div>';
     }
 
-    async function refreshAll() {
-      await Promise.all([fetchCurrent(), fetchLineup()]);
-    }
+    async function refreshAll(){ await Promise.all([fetchCurrent(), fetchLineup()]); }
+    setInterval(()=>{ if (!panel.classList.contains('hidden')) refreshAll(); }, 3000);
 
-    setInterval(() => {
-      if (!panel.classList.contains('hidden')) refreshAll();
-    }, 3000);
-
-    // -------- 操作按鈕 --------
-    document.getElementById('next-btn').addEventListener('click', async () => {
+    document.getElementById('next-btn').addEventListener('click', async ()=>{
       if (!password) return alert('尚未登入');
       const btn = document.getElementById('next-btn');
       btn.disabled = true;
-      try {
+      try{
         const data = await fetchJSON(`/api/next?password=${encodeURIComponent(password)}`);
-        if (data.success) {
-          speak(`請 ${data.number} 號到櫃檯`);
-          await refreshAll();
-        } else {
-          alert(data.message || '操作失敗');
-        }
-      } catch {
-        alert('操作失敗');
-      } finally {
-        btn.disabled = false;
-      }
+        if (data.success){ speak(`請 ${data.number} 號到櫃檯`); await refreshAll(); }
+        else alert(data.message || '操作失敗');
+      }catch{ alert('操作失敗'); }
+      finally{ btn.disabled = false; }
     });
 
-    document.getElementById('reset-btn').addEventListener('click', async () => {
+    document.getElementById('reset-btn').addEventListener('click', async ()=>{
       if (!password) return alert('尚未登入');
       if (!confirm('確定要重置全部號碼嗎？')) return;
       const data = await fetchJSON(`/api/reset?password=${encodeURIComponent(password)}`);
-      if (data.success) {
-        window.speechSynthesis?.cancel();
-        await refreshAll();
-        alert('已重置');
-      } else {
-        alert(data.message || '操作失敗');
-      }
+      if (data.success){ window.speechSynthesis?.cancel(); await refreshAll(); alert('已重置'); }
+      else alert(data.message || '操作失敗');
     });
   </script>
 </body>
