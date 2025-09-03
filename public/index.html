@@ -1,0 +1,65 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>那空沙旺叫號系統</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>📢 那空沙旺叫號系統</h1>
+    <p>歡迎光臨！請填寫以下資訊取得號碼牌</p>
+
+    <form id="queue-form">
+      <input type="text" name="name" placeholder="顯示名稱（例如 王小明）" required>
+      <select name="gender">
+        <option value="先生">先生</option>
+        <option value="小姐">小姐</option>
+      </select>
+      <input type="tel" name="phone" placeholder="手機號碼" required>
+      <button type="submit" class="primary">📥 排隊拿號碼牌</button>
+    </form>
+
+    <div id="result" class="hidden">
+      <h2>✅ 您的號碼是：<span id="ticket-number"></span></h2>
+      <p id="display-name"></p>
+    </div>
+
+    <hr>
+    <a href="./admin.html" class="admin-link">老闆叫號系統</a>
+  </main>
+
+  <script>
+    const form = document.getElementById('queue-form');
+    const resultBox = document.getElementById('result');
+    const ticketNum = document.getElementById('ticket-number');
+    const displayName = document.getElementById('display-name');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const payload = {
+        name: formData.get('name'),
+        gender: formData.get('gender'),
+        phone: formData.get('phone')
+      };
+
+      const res = await fetch('/api/queue', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        form.classList.add('hidden');
+        resultBox.classList.remove('hidden');
+        ticketNum.textContent = data.number + " 號";
+        displayName.textContent = `${payload.name} ${payload.gender}`;
+      } else {
+        alert(data.message || '系統錯誤，請稍後再試');
+      }
+    });
+  </script>
+</body>
+</html>

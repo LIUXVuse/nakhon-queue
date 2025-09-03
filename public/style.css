@@ -1,0 +1,63 @@
+/* public/style.css */
+body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background: #f7f7f7;
+    margin: 0;
+    padding: 0;
+  }
+  
+  .container {
+    max-width: 500px;
+    margin: auto;
+    padding: 2rem;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    margin-top: 3rem;
+  }
+  
+  h1, h2 {
+    text-align: center;
+  }
+  
+  input, select, button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 1rem;
+  }
+  
+  button.primary {
+    background-color: #0066cc;
+    color: white;
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 20px;
+  }
+  
+  button.danger {
+    background-color: #cc0000;
+    color: white;
+    font-weight: bold;
+    margin-top: 20px;
+  }
+  
+  button:hover {
+    opacity: 0.9;
+  }
+  
+  .hidden {
+    display: none;
+  }
+  
+  .admin-link {
+    display: block;
+    text-align: center;
+    margin-top: 20px;
+    color: #666;
+    font-size: 0.9rem;
+  }
+  
