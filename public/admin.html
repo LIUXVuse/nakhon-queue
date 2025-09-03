@@ -10,14 +10,13 @@
   <main class="card">
     <h1>🔒 老闆叫號後台</h1>
 
-    <!-- 登入 -->
-    <div id="auth-section" class="voice">
-      <input type="password" id="admin-password" placeholder="請輸入密碼" />
+    <!-- ✅ 把 class 改為 auth：密碼欄就會滿版可見 -->
+    <div id="auth-section" class="auth">
+      <input type="password" id="admin-password" placeholder="請輸入後台密碼" />
       <button id="login-btn" class="primary">登入</button>
       <button id="voice-btn" type="button" class="secondary">🔊 解鎖語音</button>
     </div>
 
-    <!-- 後台面板 -->
     <div id="admin-panel" class="hidden">
       <div class="label">目前號碼</div>
       <div id="current-number" class="now-serving" style="margin-top:4px;">
@@ -46,6 +45,7 @@
   </main>
 
   <script>
+    /* —— 下面 JS 與你目前版本相同（語音解鎖 / 取資料 / 下一號 / 重置）—— */
     const auth = document.getElementById('auth-section');
     const panel = document.getElementById('admin-panel');
     const pwdInput = document.getElementById('admin-password');
@@ -64,7 +64,6 @@
     function unlockAudio(){
       if (audioUnlocked) return;
       audioUnlocked = true;
-      // 解鎖 WebAudio
       try{
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (Ctx){
@@ -78,7 +77,6 @@
           osc.stop(audioCtx.currentTime + 0.02);
         }
       }catch{}
-      // 暖機 TTS
       try{
         if ('speechSynthesis' in window){
           const u = new SpeechSynthesisUtterance('語音已啟用');
@@ -112,7 +110,6 @@
     unlockBtn.addEventListener('click', ()=>{ unlockAudio(); speak('語音已啟用'); });
     testBtn.addEventListener('click', ()=> speak('這是測試播報'));
 
-    // 自動記住登入一次
     if (sessionStorage.getItem('adminOK') === '1') {
       auth.classList.add('hidden');
       panel.classList.remove('hidden');

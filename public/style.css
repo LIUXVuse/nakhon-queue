@@ -76,13 +76,21 @@ button.secondary{ background:#e5e7eb; color:#111; }
 
 .label{ color:var(--muted); font-size:.95rem; text-align:center; }
 
+/* ✅ 只針對 checkbox 調大小；不會再影響密碼欄 */
 .voice{
   display:flex; align-items:center; gap:8px;
   justify-content:flex-start; margin:6px 0 4px; color:#444;
 }
-.voice input{ width:20px; height:20px; }
+.voice input[type="checkbox"]{ width:20px; height:20px; }
 .voice label{ white-space:normal; line-height:1.2; }
 .voice .hint{ font-size:.85rem; color:var(--muted); }
+
+/* ✅ 登入列（密碼 + 登入 + 解鎖） */
+.auth{
+  display:flex; gap:8px; align-items:center; margin:6px 0 8px;
+}
+.auth input[type=password]{ flex:1; }
+.auth button{ height:44px; }
 
 .admin-actions{ display:flex; gap:10px; margin-top:10px; }
 .admin-actions>button{ flex:1; }
